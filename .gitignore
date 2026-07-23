@@ -1,0 +1,4 @@
+# Work Louder's device keymap backups — their proprietary data, do not publish
+backups/
+node_modules/
+*.log

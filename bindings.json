@@ -1,0 +1,21 @@
+{
+  "_comment": "Codex Micro -> herdr. AG00-05 focus agents 1-6. ACT06-12 action keys (✓/✗ = approve/deny once identified). ENC_* = volume knob. `pkill -HUP -f micro-herdrd` (or systemctl --user reload micro-herdr) to reload.",
+  "bindings": {
+    "AG00": "bin/mh focus-nth 1",
+    "AG01": "bin/mh focus-nth 2",
+    "AG02": "bin/mh focus-nth 3",
+    "AG03": "bin/mh focus-nth 4",
+    "AG04": "bin/mh focus-nth 5",
+    "AG05": "bin/mh focus-nth 6",
+    "ACT06": "bin/mh approve",
+    "ACT07": "bin/mh deny",
+    "ACT08": "bin/mh status",
+    "ACT09": "",
+    "ACT10": "",
+    "ACT11": "",
+    "ACT12": "",
+    "ENC_CW": "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+",
+    "ENC_CC": "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",
+    "ENC_CLK": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+  }
+}

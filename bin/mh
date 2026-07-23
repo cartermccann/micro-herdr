@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# mh — micro-herdr helper verbs used by bindings.json.
+#   mh focus-nth <1-6>   focus the Nth agent from `herdr agent list` (stable order)
+#   mh cycle next|prev   focus the next/prev agent relative to the focused one
+#   mh status            pop a notification summarizing agent statuses
+set -euo pipefail
+
+agents_json() { herdr agent list 2>/dev/null; }
+
+# Stable order: sort by workspace then terminal id, so key N is predictable.
+agent_ids() {
+  agents_json | jq -r '.result.agents | sort_by(.workspace_id, .terminal_id) | .[].terminal_id'
+}
+
+case "${1:-}" in
+  focus-nth)
+    n="${2:?index}"
+    id=$(agent_ids | sed -n "${n}p")
+    if [[ -z "$id" ]]; then
+      herdr notification show "Codex Micro" --body "No agent #$n (only $(agent_ids | wc -l) running)" >/dev/null
+      exit 0
+    fi
+    herdr agent focus "$id" >/dev/null
+    ;;
+  cycle)
+    dir="${2:-next}"
+    mapfile -t ids < <(agent_ids)
+    [[ ${#ids[@]} -eq 0 ]] && exit 0
+    focused=$(agents_json | jq -r '.result.agents[] | select(.focused) | .terminal_id' | head -1)
+    idx=0
+    for i in "${!ids[@]}"; do [[ "${ids[$i]}" == "$focused" ]] && idx=$i; done
+    if [[ "$dir" == "next" ]]; then idx=$(( (idx + 1) % ${#ids[@]} ));
+    else idx=$(( (idx - 1 + ${#ids[@]}) % ${#ids[@]} )); fi
+    herdr agent focus "${ids[$idx]}" >/dev/null
+    ;;
+  status)
+    summary=$(agents_json | jq -r '.result.agents | group_by(.agent_status) | map("\(.[0].agent_status): \(length)") | join("  ·  ")')
+    total=$(agents_json | jq -r '.result.agents | length')
+    herdr notification show "Agents ($total)" --body "${summary:-none running}" --sound none >/dev/null
+    ;;
+  blocked-target)
+    # Focused agent if blocked, else first blocked agent. Prints terminal_id or nothing.
+    agents_json | jq -r '
+      .result.agents as $a
+      | ($a[] | select(.focused and .agent_status=="blocked") | .terminal_id) // ($a[] | select(.agent_status=="blocked") | .terminal_id) // empty' | head -1
+    ;;
+  approve)
+    id=$("$0" blocked-target)
+    if [[ -z "$id" ]]; then
+      herdr notification show "Codex Micro" --body "No blocked agent to approve" --sound none >/dev/null; exit 0
+    fi
+    herdr agent focus "$id" >/dev/null 2>&1 || true
+    # Claude Code / Codex permission prompts select on the number key itself.
+    herdr agent send "$id" "1" >/dev/null
+    herdr notification show "✓ approved" --body "$id" --sound done >/dev/null
+    ;;
+  deny)
+    id=$("$0" blocked-target)
+    if [[ -z "$id" ]]; then
+      herdr notification show "Codex Micro" --body "No blocked agent to deny" --sound none >/dev/null; exit 0
+    fi
+    herdr agent focus "$id" >/dev/null 2>&1 || true
+    herdr agent send "$id" "$(printf '\x1b')" >/dev/null
+    herdr notification show "✗ denied" --body "$id" --sound none >/dev/null
+    ;;
+  *)
+    echo "usage: mh focus-nth <n> | cycle next|prev | status" >&2
+    exit 1
+    ;;
+esac
