@@ -1,0 +1,12 @@
+[Unit]
+Description=micro-reconnect — keep the Codex Micro's Bluetooth link up (handles its rotating BLE address)
+
+[Service]
+Type=simple
+ExecStart=/run/current-system/sw/bin/bash %h/projects/micro-herdr/mh-reconnect.sh
+Environment=PATH=/run/current-system/sw/bin:/etc/profiles/per-user/cjm/bin
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
