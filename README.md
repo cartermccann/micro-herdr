@@ -86,5 +86,12 @@ press it. Helper verbs for herdr live in `bin/mh`
 
 Unofficial, unaffiliated with OpenAI or Work Louder. It interoperates with the
 Codex Micro over Bluetooth using Work Louder's own device kit, which you must
-supply yourself — no proprietary code is redistributed here. The Micro's USB-C is
-charge-only; all communication is over Bluetooth. Use at your own risk.
+supply yourself — no proprietary code is redistributed here. Use at your own risk.
+
+The Micro speaks the same vendor HID protocol over **USB as well as Bluetooth**.
+An earlier version of this README claimed USB-C was charge-only. That is wrong:
+on firmware v0.4.1 it enumerates as `303a:8360` on the USB bus and the bridge
+connects over it. Prefer USB where you can, because the node is stable, with no
+rotating BLE address and no reconnect loop. One caveat: the `hidraw` number is
+*not* stable across reconnects, so always go through device discovery rather than
+a hardcoded path.

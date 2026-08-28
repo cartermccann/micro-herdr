@@ -22,16 +22,18 @@
 import { KIT_PATH, resolveMac, makeLogger } from "./lib/kit.mjs";
 import { watchTarget } from "./lib/target.mjs";
 import { makeDispatcher } from "./lib/dispatch.mjs";
+import { makeDictation } from "./lib/dictate.mjs";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = process.env.MICRO_BRIDGE_CONFIG || join(HERE, "profiles.json");
 const DRY_RUN = process.env.MICRO_BRIDGE_DRYRUN === "1";
 
-const { WLDeviceDiscovery, WLDeviceCommImpl } = await import(KIT_PATH);
+const { WLDeviceDiscovery, WLDeviceCommImpl, WLRPCApi } = await import(KIT_PATH);
 const kitLog = makeLogger();
 const MAC = resolveMac();
 const ts = () => new Date().toISOString().slice(11, 19);
@@ -63,6 +65,18 @@ const targets = watchTarget({
   log: say,
 });
 
+// Live RPC handle, set on connect. Dictation uses it to drive the LEDs, so it
+// has to be read lazily rather than captured once at startup.
+let rpc = null;
+
+const dictation = makeDictation({
+  script: process.env.MICRO_BRIDGE_DICTATE || join(homedir(), ".local/bin/toggle-dictation.sh"),
+  log: say,
+  getRpc: () => rpc,
+  focusApp: (appid, done) =>
+    execFile("wlrctl", ["toplevel", "focus", `app_id:${appid}`], { timeout: 5000 }, () => done()),
+});
+
 // Debounce presses and releases only. Detents must all be delivered; ENC_CLK
 // genuinely bounces and needs it.
 const lastFire = new Map();
@@ -76,15 +90,21 @@ function onKey({ k, act }) {
     lastFire.set(id, now);
   }
 
-  // Only presses and detents trigger verbs for now. Release edges are wired
-  // through to nothing until the mic key's push-to-talk lands (P5), but they
-  // ARE delivered here, which is the part the old daemon threw away.
-  if (act === 0) return;
-
   const verb = cfg.keys?.[k];
-  if (verb == null) { if (act === 1) say(`· ${k} (unmapped)`); return; }
 
-  if (verb === "dictate") { say(`▶ ${k} → dictate · not implemented yet (P5)`); return; }
+  // Push-to-talk is the one verb that needs both edges: hold to record, release
+  // to transcribe. Handled before the release guard below.
+  if (verb === "dictate") {
+    if (DRY_RUN) { say(`▶ ${k} → dictate ${act === 1 ? "start" : "stop"} (dry run)`); return; }
+    if (act === 1) dictation.start(targets.active);
+    else if (act === 0) dictation.stop();
+    return;
+  }
+
+  // Every other verb fires on press or detent. Release edges still arrive here,
+  // which is the part the old daemon discarded before any binding could see them.
+  if (act === 0) return;
+  if (verb == null) { if (act === 1) say(`· ${k} (unmapped)`); return; }
 
   const target = targets.active;
   const action = verb.startsWith("focus:") || verb.startsWith("shell:")
@@ -122,10 +142,13 @@ async function loop() {
       continue;
     }
     comm.addNotifyHandler("v.oai.hid", onKey);
+    rpc = new WLRPCApi(comm, kitLog);
     say(`✅ connected @ ${dev.portPath} — active target: ${targets.active?.label ?? "none"}`);
 
     while (!down) await sleep(300);
     say("link dropped — reconnecting…");
+    rpc = null;
+    dictation.reset();
     try { await comm.disconnect(); } catch {}
     await sleep(500);
   }
