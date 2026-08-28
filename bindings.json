@@ -1,5 +1,5 @@
 {
-  "_comment": "Codex Micro -> herdr. AG00-05 focus agents 1-6. ACT06-12 action keys (✓/✗ = approve/deny once identified). ENC_* = volume knob. `pkill -HUP -f micro-herdrd` (or systemctl --user reload micro-herdr) to reload.",
+  "_comment": "Codex Micro -> herdr. Verified on hardware 2026-08-28: AG00-AG05 are the six top keys left to right, ACT06-ACT12 the bottom row left to right. The wide mic cap sends ACT10 AND ACT11 in the same millisecond; ACT11 is ignored by the daemon, bind ACT10. Suffix a key with :release to fire on the release edge instead of the press (e.g. \"ACT10:release\"), which is how hold-style actions work. ENC_CW/ENC_CC send rotation detents only (no release); ENC_CLK sends press and release. `pkill -HUP -f micro-herdrd` (or atlas-svc restart micro-herdr) to reload.",
   "bindings": {
     "AG00": "bin/mh focus-nth 1",
     "AG01": "bin/mh focus-nth 2",
