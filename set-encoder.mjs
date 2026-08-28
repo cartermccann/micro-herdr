@@ -5,7 +5,7 @@
 // Reversible: original keymap is in backups/keymap.json.orig.
 import { KIT_PATH, resolveMac, makeLogger } from "./lib/kit.mjs";
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const RESTORE = process.argv[2] === "restore";
 const { WLDeviceDiscovery, WLDeviceCommImpl, WLRPCApi } = await import(KIT_PATH);
@@ -31,9 +31,25 @@ async function main() {
   let km = await read();
   console.log("current encoders:", km.match(/"encoders":\[\[[^\]]*\]\]/)?.[0]);
 
+  // Never write the device keymap without a restorable copy of the original.
+  // `restore` has always read this file, but nothing ever wrote it — so running
+  // this script used to be a one-way door.
+  const BACKUP_DIR = new URL("./backups/", import.meta.url);
+  const BACKUP = new URL("./backups/keymap.json.orig", import.meta.url);
+  if (!RESTORE && !existsSync(BACKUP)) {
+    mkdirSync(BACKUP_DIR, { recursive: true });
+    writeFileSync(BACKUP, km);
+    console.log(`backed up original keymap -> backups/keymap.json.orig (${km.length}b)`);
+  }
+
   let next;
   if (RESTORE) {
-    next = JSON.parse(readFileSync(new URL("./backups/keymap.json.orig", import.meta.url), "utf8"));
+    if (!existsSync(BACKUP)) {
+      console.log("!! no backups/keymap.json.orig to restore from — aborting");
+      await comm.disconnect().catch(() => {});
+      process.exit(1);
+    }
+    next = JSON.parse(readFileSync(BACKUP, "utf8"));
     next = JSON.stringify(next);
   } else {
     // CC (counter-clockwise) -> VOLD, CW (clockwise) -> VOLU, CLK (click) -> MUTE
