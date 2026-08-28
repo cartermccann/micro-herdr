@@ -23,6 +23,7 @@ import { KIT_PATH, resolveMac, makeLogger } from "./lib/kit.mjs";
 import { watchTarget } from "./lib/target.mjs";
 import { makeDispatcher } from "./lib/dispatch.mjs";
 import { makeDictation } from "./lib/dictate.mjs";
+import { makePainter, Preset, Colour } from "./lib/lighting.mjs";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -59,23 +60,41 @@ loadConfig();
 process.on("SIGHUP", () => { say("SIGHUP — reloading config"); try { loadConfig(); } catch (e) { say("config error:", e.message); } });
 
 const dispatch = makeDispatcher({ log: say, dryRun: DRY_RUN });
+// Declared before watchTarget because its onChange closure reads it: a const
+// declared later would sit in its temporal dead zone and throw if the
+// compositor emitted a focus change before this module finished evaluating.
+let dictation = null;
+
 const targets = watchTarget({
   targets: cfg.targets,
   fallback: cfg.fallback,
   log: say,
+  onChange: (t) => { if (!dictation?.recording) paintTarget(t); },
 });
 
 // Live RPC handle, set on connect. Dictation uses it to drive the LEDs, so it
 // has to be read lazily rather than captured once at startup.
 let rpc = null;
 
-const dictation = makeDictation({
+const paint = makePainter({ getRpc: () => rpc, log: say });
+
+dictation = makeDictation({
   script: process.env.MICRO_BRIDGE_DICTATE || join(homedir(), ".local/bin/toggle-dictation.sh"),
   log: say,
-  getRpc: () => rpc,
+  paint,
   focusApp: (appid, done) =>
     execFile("wlrctl", ["toplevel", "focus", `app_id:${appid}`], { timeout: 5000 }, () => done()),
 });
+
+// Show which target the keys will act on. Neither Cursor nor Grokbot exposes
+// agent state to query, so per-target colour is the honest version of status
+// lighting: it answers "where will this key go?", which is the question the
+// sticky-target rule makes worth asking.
+function paintTarget(t) {
+  const colour = t?.name ? cfg.targetColours?.[t.name] : null;
+  if (colour == null) { paint(Preset.off(), "target"); return; }
+  paint(Preset.target(typeof colour === "string" ? parseInt(colour, 16) : colour), `target ${t.name}`);
+}
 
 // Debounce presses and releases only. Detents must all be delivered; ENC_CLK
 // genuinely bounces and needs it.
@@ -144,6 +163,7 @@ async function loop() {
     comm.addNotifyHandler("v.oai.hid", onKey);
     rpc = new WLRPCApi(comm, kitLog);
     say(`✅ connected @ ${dev.portPath} — active target: ${targets.active?.label ?? "none"}`);
+    paintTarget(targets.active);
 
     while (!down) await sleep(300);
     say("link dropped — reconnecting…");
