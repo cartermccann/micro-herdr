@@ -98,6 +98,24 @@ function paintTarget(t) {
   paint(Preset.target(typeof colour === "string" ? parseInt(colour, 16) : colour), `target ${t.name}`);
 }
 
+// Verbs for the active target, with WINDOW VARIANTS applied.
+//
+// One app can have several windows that behave differently. Cursor is the case
+// that forced this: its main workbench window honours the keybindings in
+// keybindings.json, but its separate "Cursor Agents" window ignores them
+// entirely (default chords still work there, custom ones do nothing), so the
+// composer dictation command is unreachable in that window. Rather than give up
+// native dictation for all of Cursor, a variant matched on the window title
+// falls back to the local pipeline only where it is needed.
+function verbsFor(target) {
+  const base = cfg.verbs?.[target?.name] ?? {};
+  const title = targets.focusedTitle ?? "";
+  for (const v of cfg.windowVariants?.[target?.name] ?? []) {
+    if (v.titleMatch && title.includes(v.titleMatch)) return { ...base, ...v.verbs };
+  }
+  return base;
+}
+
 // Use the app's OWN dictation where it has one, and the local Parakeet pipeline
 // where it does not. Terminals are the clearest "does not" case, which is where
 // the CLI agents live.
@@ -178,7 +196,7 @@ function onKey({ k, act }) {
   // Push-to-talk is the one verb that needs both edges: hold to record, release
   // to transcribe. Handled before the release guard below.
   if (verb === "dictate") {
-    const strategy = cfg.verbs?.[targets.active?.name]?.dictate ?? null;
+    const strategy = verbsFor(targets.active)?.dictate ?? null;
     handleDictate(k, act, strategy);
     return;
   }
@@ -191,7 +209,7 @@ function onKey({ k, act }) {
   const target = targets.active;
   const action = verb.startsWith("focus:") || verb.startsWith("shell:")
     ? verb
-    : cfg.verbs?.[target?.name]?.[verb] ?? null;
+    : verbsFor(target)?.[verb] ?? null;
 
   dispatch({ verb, action, target, key: k });
 }
