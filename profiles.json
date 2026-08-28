@@ -1,0 +1,64 @@
+{
+  "_comment": "Codex Micro -> any GUI agent app. Keys map to VERBS; each target defines how a verb is performed in that app. Verb values are wtype chords, or focus:<appid>, or shell:<cmd>. null means NOT YET KNOWN — the daemon logs it as unresolved rather than guessing, because a key that does the wrong thing in the wrong app is worse than one that does nothing. Physical layout confirmed 2026-08-28: AG00-AG05 top row L-R, ACT06-ACT12 bottom row L-R, ACT11 ignored (the wide mic cap fires ACT10+ACT11 together).",
+
+  "fallback": "cursor",
+
+  "targets": [
+    { "name": "cursor",  "appid": "cursor",   "label": "Cursor" },
+    { "name": "grokbot", "appid": "grok-bot", "label": "Grokbot" }
+  ],
+
+  "keys": {
+    "ACT06": "new-session",
+    "ACT07": "approve",
+    "ACT08": "deny",
+    "ACT09": "diff",
+    "ACT10": "dictate",
+    "ACT12": "send",
+
+    "AG00": "focus:cursor",
+    "AG01": "focus:grok-bot",
+    "AG02": "focus:com.mitchellh.ghostty",
+    "AG03": null,
+    "AG04": null,
+    "AG05": null,
+
+    "ENC_CW": "effort-up",
+    "ENC_CC": "effort-down",
+    "ENC_CLK": null
+  },
+
+  "verbs": {
+    "cursor": {
+      "send": "Return",
+      "paste": "ctrl+v",
+      "new-session": null,
+      "approve": null,
+      "deny": null,
+      "diff": null,
+      "effort-up": null,
+      "effort-down": null
+    },
+    "grokbot": {
+      "send": "Return",
+      "paste": "ctrl+v",
+      "new-session": null,
+      "approve": null,
+      "deny": null,
+      "diff": null,
+      "effort-up": null,
+      "effort-down": null
+    }
+  },
+
+  "_grounded": {
+    "send": "Carter: the send key 'sends the transcripted line, its basically like enter'",
+    "paste": "grok-bot registers CmdOrCtrl+V as an Electron accelerator; Cursor is VS Code derived"
+  },
+
+  "_needs_input": [
+    "new-session / approve / deny / diff / effort-up / effort-down in BOTH apps",
+    "Grokbot registers no app-specific accelerators (renderer-side keydown only), so these cannot be read out of its bundle",
+    "Cursor's are buried in a minified workbench bundle; faster to just be told"
+  ]
+}
