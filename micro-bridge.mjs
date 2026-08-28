@@ -16,12 +16,14 @@
 //   - ENC_CLK bounces at ~1 ms; detents arrive 15-30 ms apart and must all pass
 //   - raw notify fields are ABBREVIATED: {k, act}, not {key, act}
 //
-// Codex desktop takes exclusive ownership of the hidraw node, so it must be
-// closed before this can connect. That is by design: this is a mode you switch
-// into, not a co-tenant.
+// hidraw allows MULTIPLE concurrent readers, so this and Codex desktop can and
+// do hold the same node at once — measured: /dev/hidraw6 open in both `node
+// micro-bridge.mjs` and Codex's Electron. Both then act on the same key, which
+// is why the mic key produced two transcriptions. The fix is the passthrough
+// list in profiles.json, not shutting Codex down.
 import { KIT_PATH, resolveMac, makeLogger } from "./lib/kit.mjs";
 import { watchTarget } from "./lib/target.mjs";
-import { makeDispatcher } from "./lib/dispatch.mjs";
+import { makeDispatcher, chordToHoldArgs, sendWtype } from "./lib/dispatch.mjs";
 import { makeDictation } from "./lib/dictate.mjs";
 import { makePainter, Preset, Colour } from "./lib/lighting.mjs";
 import { execFile } from "node:child_process";
@@ -96,6 +98,57 @@ function paintTarget(t) {
   paint(Preset.target(typeof colour === "string" ? parseInt(colour, 16) : colour), `target ${t.name}`);
 }
 
+// Use the app's OWN dictation where it has one, and the local Parakeet pipeline
+// where it does not. Terminals are the clearest "does not" case, which is where
+// the CLI agents live.
+//
+//   "parakeet"                     local pipeline, hold to record
+//   { hold: "<chord>" }            hold a chord for as long as the mic key is
+//                                  held, for apps whose hotkey is push-to-talk
+//   { start: "<c>", stop: "<c>" }  separate start and stop commands
+let heldChord = null;
+
+function handleDictate(k, act, strategy) {
+  if (strategy == null) {
+    if (act === 1) say(`✗ ${k} → dictate · not defined for ${targets.active?.label ?? "no target"} (needs input)`);
+    return;
+  }
+
+  if (strategy === "parakeet") {
+    if (DRY_RUN) { say(`▶ ${k} → dictate ${act === 1 ? "start" : "stop"} · parakeet (dry run)`); return; }
+    if (act === 1) dictation.start(targets.active);
+    else if (act === 0) dictation.stop();
+    return;
+  }
+
+  if (typeof strategy === "object" && strategy.hold) {
+    const args = chordToHoldArgs(strategy.hold);
+    if (args == null) { say(`✗ ${k} → dictate · unparseable hold ${JSON.stringify(strategy.hold)}`); return; }
+    if (act === 1) {
+      say(`▶ ${k} → dictate hold ${strategy.hold} in ${targets.active?.label}`);
+      heldChord = args;
+      sendWtype(args.down, { log: say, dryRun: DRY_RUN, what: "dictate down" });
+    } else if (act === 0 && heldChord) {
+      // Release whatever was actually pressed, not what the config says now:
+      // profiles.json can be reloaded with SIGHUP mid-hold, and leaving a
+      // modifier stuck down would wreck every subsequent keystroke.
+      sendWtype(heldChord.up, { log: say, dryRun: DRY_RUN, what: "dictate up" });
+      heldChord = null;
+    }
+    return;
+  }
+
+  if (typeof strategy === "object" && (strategy.start || strategy.stop)) {
+    const chord = act === 1 ? strategy.start : strategy.stop;
+    if (!chord) return;
+    say(`▶ ${k} → dictate ${act === 1 ? "start" : "stop"} [${chord}] in ${targets.active?.label}`);
+    dispatch({ verb: "dictate", action: chord, target: targets.active, key: k });
+    return;
+  }
+
+  if (act === 1) say(`✗ ${k} → dictate · unknown strategy ${JSON.stringify(strategy)}`);
+}
+
 // Debounce presses and releases only. Detents must all be delivered; ENC_CLK
 // genuinely bounces and needs it.
 const lastFire = new Map();
@@ -109,14 +162,24 @@ function onKey({ k, act }) {
     lastFire.set(id, now);
   }
 
+  // PASSTHROUGH. Codex desktop reads the same hidraw node as we do (hidraw
+  // allows multiple concurrent readers) and acts on the same keys with its own
+  // native Micro integration. Acting here too makes every key fire twice —
+  // most visibly the mic key, which produced two transcriptions. While a
+  // passthrough app has focus, the device belongs to it.
+  const focused = targets.focused;
+  if (focused && cfg.passthrough?.includes(focused)) {
+    if (act === 1) say(`· ${k} → passthrough (${focused} owns the device)`);
+    return;
+  }
+
   const verb = cfg.keys?.[k];
 
   // Push-to-talk is the one verb that needs both edges: hold to record, release
   // to transcribe. Handled before the release guard below.
   if (verb === "dictate") {
-    if (DRY_RUN) { say(`▶ ${k} → dictate ${act === 1 ? "start" : "stop"} (dry run)`); return; }
-    if (act === 1) dictation.start(targets.active);
-    else if (act === 0) dictation.stop();
+    const strategy = cfg.verbs?.[targets.active?.name]?.dictate ?? null;
+    handleDictate(k, act, strategy);
     return;
   }
 
@@ -156,7 +219,7 @@ async function loop() {
     if (!(await comm.connect(dev).catch(() => false))) {
       // The usual cause is Codex desktop holding the node. Say so, since the
       // kit's own error does not.
-      say("connect failed — is Codex desktop running and holding /dev/hidraw*?");
+      say("connect failed — check the device is awake and the hidraw node is readable");
       await sleep(3000);
       continue;
     }
