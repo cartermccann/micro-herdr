@@ -1,0 +1,136 @@
+{
+  "_comment": "Codex Micro -> whichever app has focus. Keys map to VERBS; each target says how a verb is performed in that app. Physical layout confirmed 2026-08-28: AG00-AG05 top row L-R, ACT06-ACT12 bottom row L-R, ACT11 ignored (the wide mic cap fires ACT10+ACT11 together).",
+  "_dictation_strategy": "Use the app's OWN dictation where it has one, fall back to the local Parakeet pipeline where it does not. That is why `dictate` is a per-target verb rather than a single global behaviour: 'parakeet' runs the local pipeline (hold to record, release to transcribe and insert), {\"hold\": \"<chord>\"} holds a chord down for as long as the mic key is held (for apps whose own hotkey is push-to-talk), and {\"start\": \"<chord>\", \"stop\": \"<chord>\"} sends one chord on press and another on release (for apps with separate start/stop commands).",
+  "fallback": "terminal",
+  "passthrough": [
+    "codex-desktop"
+  ],
+  "_passthrough_why": "Codex desktop reads the SAME hidraw node as this bridge — hidraw allows multiple concurrent readers — and acts on the same keys with its own native Micro integration. Without this the mic key fires twice: Codex's dictation and ours. While a passthrough app has focus the bridge ignores every key and lets the app own the device.",
+  "targetColours": {
+    "cursor": "2f7fe0",
+    "grokbot": "c06010",
+    "terminal": "3f9a72",
+    "t3code": "8a5cd6"
+  },
+  "targets": [
+    {
+      "name": "cursor",
+      "appid": "cursor",
+      "label": "Cursor"
+    },
+    {
+      "name": "grokbot",
+      "appid": "grok-bot",
+      "label": "Grokbot"
+    },
+    {
+      "name": "terminal",
+      "appid": "com.mitchellh.ghostty",
+      "label": "Terminal"
+    },
+    {
+      "name": "t3code",
+      "appid": "t3code",
+      "label": "T3 Code"
+    }
+  ],
+  "keys": {
+    "ACT06": "new-session",
+    "ACT07": "approve",
+    "ACT08": "deny",
+    "ACT09": "diff",
+    "ACT10": "dictate",
+    "ACT12": "send",
+    "AG00": "focus:cursor",
+    "AG01": "focus:grok-bot",
+    "AG02": "focus:com.mitchellh.ghostty",
+    "AG03": null,
+    "AG04": null,
+    "AG05": null,
+    "ENC_CW": "effort-up",
+    "ENC_CC": "effort-down",
+    "ENC_CLK": "cycle-model"
+  },
+  "verbs": {
+    "cursor": {
+      "send": "Return",
+      "paste": "ctrl+v",
+      "dictate": {
+        "start": "F13",
+        "stop": "F13"
+      },
+      "new-session": null,
+      "approve": null,
+      "deny": null,
+      "diff": null,
+      "effort-up": "F14",
+      "effort-down": "F14",
+      "cycle-model": "F15"
+    },
+    "grokbot": {
+      "send": "Return",
+      "paste": "ctrl+v",
+      "dictate": {
+        "start": "ctrl+d",
+        "stop": "ctrl+d"
+      },
+      "new-session": null,
+      "approve": null,
+      "deny": null,
+      "diff": null,
+      "effort-up": null,
+      "effort-down": null,
+      "cycle-model": null
+    },
+    "terminal": {
+      "send": "Return",
+      "paste": "ctrl+shift+v",
+      "dictate": "parakeet",
+      "approve": "1",
+      "deny": "Escape",
+      "new-session": null,
+      "diff": null,
+      "effort-up": null,
+      "effort-down": null,
+      "cycle-model": null
+    },
+    "t3code": {
+      "send": "Return",
+      "paste": "ctrl+v",
+      "dictate": "parakeet",
+      "new-session": null,
+      "approve": null,
+      "deny": null,
+      "diff": null,
+      "effort-up": null,
+      "effort-down": null,
+      "cycle-model": null
+    }
+  },
+  "_grounded": {
+    "send": "Carter: the send key 'sends the transcripted line, its basically like enter'",
+    "paste": "grok-bot registers CmdOrCtrl+V as an Electron accelerator; Cursor is VS Code derived; ghostty uses ctrl+shift+v in a terminal",
+    "grokbot.dictate": "Grokbot's composer mic button is ctrl+d, and its KEYDOWN handler is a toggle: if already recording it stops, otherwise it starts. Its keyup handler only stops when the key was held past a threshold, AND it clears its own down-timestamp first, so a synthetic hold does not work: wtype cannot hold a key across two invocations (the virtual keyboard is destroyed when the process exits), so the app saw an instant press-release, latched, and then ignored the later release. Sending a COMPLETE ctrl+d on each edge is what gives hold-to-talk: the first keydown starts, the second stops.",
+    "terminal.approve": "CLI agent permission prompts select on the number key, and terminal.deny on Escape — the same thing bin/mh already does for herdr",
+    "cursor.dictate": "Cursor's composer mic button is composer.toggleVoiceDictation (composer.cancelVoiceDictation also exists), read out of the workbench bundle. It ships with no default keybinding, so ~/.config/Cursor/User/keybindings.json maps F13 to it and the bridge sends F13 on both edges. It is a toggle, so down-then-up gives hold-to-talk.",
+    "t3code.dictate": "T3 Code has NO built-in dictation: its only Dictation reference is a comment about Wispr Flow, an external tool, pasting into it. So it gets the local pipeline like the terminal does.",
+    "cursor.effort": "composer.cycleModelParameter (reasoning effort) and composer.cycleModel, read out of the workbench bundle alongside composer.openModelToggle. Neither ships a default keybinding, so Cursor's keybindings.json maps F14 and F15 to them. LIMITATION: these are one-way cycle commands, so the knob advances the effort level in the same direction whichever way you turn it. It wraps, so you can still reach every level.",
+    "grokbot.effort": "Deliberately unmapped: Grokbot exposes a single model with no effort control, so there is nothing for the knob to select."
+  },
+  "_needs_input": [
+    "t3code effort/model: T3 Code has modelPicker.toggle, modelPicker.jump.1-9, reasoningEffort and effortLevel as bindable command names, but its config dir holds only Electron profile data, so there is no keybindings file to write and no discoverable defaults. Assign chords in its own settings UI, then set them here.",
+    "terminal effort/model: CLI agents switch models with a slash command rather than a keystroke (Claude Code uses /model), so a knob detent has no natural mapping. Could send literal text if that is wanted.",
+    "new-session / approve / deny / diff for cursor, grokbot and t3code"
+  ],
+  "windowVariants": {
+    "cursor": [
+      {
+        "titleMatch": "Cursor Agents",
+        "_why": "The Agents window ignores keybindings.json entirely — verified 2026-08-28: ctrl+shift+n (a default chord) works there, but F13 and a custom ctrl+alt+d both do nothing, while all three work in the main Cursor window. So composer.toggleVoiceDictation is unreachable there and the local pipeline is the only thing that works.",
+        "verbs": {
+          "dictate": "parakeet"
+        }
+      }
+    ]
+  }
+}

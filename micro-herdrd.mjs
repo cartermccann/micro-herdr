@@ -41,16 +41,32 @@ function runBinding(cmd, key) {
   });
 }
 
-// Debounce so a key that emits act:1 twice quickly fires once.
+// The wide mic keycap sends ACT10 and ACT11 in the SAME millisecond — one press,
+// two codes. Codex registers that slot as ACT10_ACT11 and discards ACT11, so we
+// do too, or every action on that key fires twice.
+const IGNORED_KEYS = new Set(["ACT11"]);
+
+// act: 1 = press, 0 = release, 2 = encoder detent (no release edge).
+// Bind "KEY" to fire on press, and "KEY:release" to fire on release — hold-style
+// actions (push-to-talk, hold-to-preview) need the release edge, which the old
+// `act !== 1` guard threw away before any binding could see it. That guard also
+// silently swallowed every ENC_CW/ENC_CC detent, since those only ever send act:2.
 const lastFire = new Map();
 function onKey({ k, act }) {
-  if (act !== 1) return;                       // press only
-  const now = Date.now();
-  if (now - (lastFire.get(k) || 0) < 120) return;
-  lastFire.set(k, now);
-  const cmd = bindings[k];
-  if (cmd) runBinding(cmd, k);
-  else say(`· ${k} (unbound)`);
+  if (IGNORED_KEYS.has(k)) return;
+  const name = act === 0 ? `${k}:release` : k;
+
+  // Debounce presses and releases only. Rotation detents arrive 15-30 ms apart
+  // and must all be delivered; ENC_CLK, by contrast, bounces at ~1 ms and needs it.
+  if (act !== 2) {
+    const now = Date.now();
+    if (now - (lastFire.get(name) || 0) < 120) return;
+    lastFire.set(name, now);
+  }
+
+  const cmd = bindings[name];
+  if (cmd) runBinding(cmd, name);
+  else if (act === 1) say(`· ${name} (unbound)`);
 }
 
 const bleConnect = () =>
