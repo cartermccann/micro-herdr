@@ -4,7 +4,7 @@
   "description": "Bridge the OpenAI Codex Micro (Work Louder macropad) to herdr / shell commands on Linux over Bluetooth",
   "type": "module",
   "bin": { "micro-herdrd": "./micro-herdrd.mjs" },
-  "scripts": { "start": "node micro-herdrd.mjs" },
+  "scripts": { "start": "node micro-herdrd.mjs", "test": "node --test lib/identity.test.mjs" },
   "license": "MIT",
   "author": "Carter McCann",
   "repository": { "type": "git", "url": "https://github.com/cartermccann/micro-herdr.git" },

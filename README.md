@@ -10,6 +10,13 @@ map its keys to agent actions, and drive its RGB from live agent status.
 > Built for and tested with herdr + a niri/PipeWire NixOS setup, but the binding
 > layer is just "key → shell command", so it adapts to anything.
 
+The **GUI-agent bridge** (`micro-bridge.mjs`, this branch) drives Cursor and
+Grokbot from the same keys. Sticky-target matching compares a canonical
+`app_id` (lowercase, spaces to hyphens) because Hyprland reports Electron's
+productName (`Grok Bot`, `Cursor`) while mango on atlas reported the hyphenated
+desktop ids. `wlrctl toplevel focus` is called with every spelling; repeated
+`app_id:` keys are OR.
+
 ## What it does
 
 - **Agent keys → herdr** — focus agents, approve/deny the blocked one, show status
@@ -79,6 +86,8 @@ press it. Helper verbs for herdr live in `bin/mh`
 | `bindings.json` | your key map (hot-reloads on SIGHUP) |
 | `bin/mh` | herdr helper verbs |
 | `lib/kit.mjs` | kit-path + MAC resolution + shared logger |
+| `lib/identity.mjs` | match Hyprland/mango Electron `app_id` spellings (`Grok Bot` vs `grok-bot`) |
+| `lib/compositor.mjs` | mango vs Hyprland focus backends |
 | `set-encoder.mjs` | remap the encoder to volume codes (and restore) |
 | `probe.mjs` / `inspect.mjs` | dev tools: log raw events / dump device config |
 

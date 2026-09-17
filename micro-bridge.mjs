@@ -26,6 +26,7 @@ import { watchTarget } from "./lib/target.mjs";
 import { makeDispatcher, chordToHoldArgs, sendWtype } from "./lib/dispatch.mjs";
 import { makeDictation } from "./lib/dictate.mjs";
 import { makePainter, Preset, Colour } from "./lib/lighting.mjs";
+import { allAppidsForTarget, appidVariants, canonicalAppid, isPassthrough, wlrctlFocusArgs } from "./lib/identity.mjs";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -43,9 +44,6 @@ const ts = () => new Date().toISOString().slice(11, 19);
 const say = (...a) => console.log(`[${ts()}]`, ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// One physical press of the wide mic cap sends two codes. Codex registers that
-// slot as ACT10_ACT11 and acts only on ACT10; do the same or everything on that
-// key fires twice.
 const IGNORED_KEYS = new Set(["ACT11"]);
 
 let cfg;
@@ -61,10 +59,15 @@ function loadConfig() {
 loadConfig();
 process.on("SIGHUP", () => { say("SIGHUP — reloading config"); try { loadConfig(); } catch (e) { say("config error:", e.message); } });
 
-const dispatch = makeDispatcher({ log: say, dryRun: DRY_RUN });
-// Declared before watchTarget because its onChange closure reads it: a const
-// declared later would sit in its temporal dead zone and throw if the
-// compositor emitted a focus change before this module finished evaluating.
+const dispatch = makeDispatcher({
+  log: say,
+  dryRun: DRY_RUN,
+  focusIds: (id) => {
+    const c = canonicalAppid(id);
+    const t = cfg.targets.find((t) => canonicalAppid(t.appid) === c || t.name === id);
+    return t ? allAppidsForTarget(t) : appidVariants(id);
+  },
+});
 let dictation = null;
 
 const targets = watchTarget({
@@ -74,8 +77,6 @@ const targets = watchTarget({
   onChange: (t) => { if (!dictation?.recording) paintTarget(t); },
 });
 
-// Live RPC handle, set on connect. Dictation uses it to drive the LEDs, so it
-// has to be read lazily rather than captured once at startup.
 let rpc = null;
 
 const paint = makePainter({ getRpc: () => rpc, log: say });
@@ -84,29 +85,19 @@ dictation = makeDictation({
   script: process.env.MICRO_BRIDGE_DICTATE || join(homedir(), ".local/bin/toggle-dictation.sh"),
   log: say,
   paint,
-  focusApp: (appid, done) =>
-    execFile("wlrctl", ["toplevel", "focus", `app_id:${appid}`], { timeout: 5000 }, () => done()),
+  focusApp: (appid, done) => {
+    const t = cfg.targets.find((t) => t.appid === appid);
+    const ids = t ? allAppidsForTarget(t) : appidVariants(appid);
+    execFile("wlrctl", wlrctlFocusArgs(ids), { timeout: 5000 }, () => done());
+  },
 });
 
-// Show which target the keys will act on. Neither Cursor nor Grokbot exposes
-// agent state to query, so per-target colour is the honest version of status
-// lighting: it answers "where will this key go?", which is the question the
-// sticky-target rule makes worth asking.
 function paintTarget(t) {
   const colour = t?.name ? cfg.targetColours?.[t.name] : null;
   if (colour == null) { paint(Preset.off(), "target"); return; }
   paint(Preset.target(typeof colour === "string" ? parseInt(colour, 16) : colour), `target ${t.name}`);
 }
 
-// Verbs for the active target, with WINDOW VARIANTS applied.
-//
-// One app can have several windows that behave differently. Cursor is the case
-// that forced this: its main workbench window honours the keybindings in
-// keybindings.json, but its separate "Cursor Agents" window ignores them
-// entirely (default chords still work there, custom ones do nothing), so the
-// composer dictation command is unreachable in that window. Rather than give up
-// native dictation for all of Cursor, a variant matched on the window title
-// falls back to the local pipeline only where it is needed.
 function verbsFor(target) {
   const base = cfg.verbs?.[target?.name] ?? {};
   const title = targets.focusedTitle ?? "";
@@ -116,14 +107,6 @@ function verbsFor(target) {
   return base;
 }
 
-// Use the app's OWN dictation where it has one, and the local Parakeet pipeline
-// where it does not. Terminals are the clearest "does not" case, which is where
-// the CLI agents live.
-//
-//   "parakeet"                     local pipeline, hold to record
-//   { hold: "<chord>" }            hold a chord for as long as the mic key is
-//                                  held, for apps whose hotkey is push-to-talk
-//   { start: "<c>", stop: "<c>" }  separate start and stop commands
 let heldChord = null;
 
 function handleDictate(k, act, strategy) {
@@ -147,9 +130,6 @@ function handleDictate(k, act, strategy) {
       heldChord = args;
       sendWtype(args.down, { log: say, dryRun: DRY_RUN, what: "dictate down" });
     } else if (act === 0 && heldChord) {
-      // Release whatever was actually pressed, not what the config says now:
-      // profiles.json can be reloaded with SIGHUP mid-hold, and leaving a
-      // modifier stuck down would wreck every subsequent keystroke.
       sendWtype(heldChord.up, { log: say, dryRun: DRY_RUN, what: "dictate up" });
       heldChord = null;
     }
@@ -167,8 +147,6 @@ function handleDictate(k, act, strategy) {
   if (act === 1) say(`✗ ${k} → dictate · unknown strategy ${JSON.stringify(strategy)}`);
 }
 
-// Debounce presses and releases only. Detents must all be delivered; ENC_CLK
-// genuinely bounces and needs it.
 const lastFire = new Map();
 
 function onKey({ k, act }) {
@@ -180,29 +158,20 @@ function onKey({ k, act }) {
     lastFire.set(id, now);
   }
 
-  // PASSTHROUGH. Codex desktop reads the same hidraw node as we do (hidraw
-  // allows multiple concurrent readers) and acts on the same keys with its own
-  // native Micro integration. Acting here too makes every key fire twice —
-  // most visibly the mic key, which produced two transcriptions. While a
-  // passthrough app has focus, the device belongs to it.
   const focused = targets.focused;
-  if (focused && cfg.passthrough?.includes(focused)) {
+  if (isPassthrough(focused, cfg.passthrough)) {
     if (act === 1) say(`· ${k} → passthrough (${focused} owns the device)`);
     return;
   }
 
   const verb = cfg.keys?.[k];
 
-  // Push-to-talk is the one verb that needs both edges: hold to record, release
-  // to transcribe. Handled before the release guard below.
   if (verb === "dictate") {
     const strategy = verbsFor(targets.active)?.dictate ?? null;
     handleDictate(k, act, strategy);
     return;
   }
 
-  // Every other verb fires on press or detent. Release edges still arrive here,
-  // which is the part the old daemon discarded before any binding could see them.
   if (act === 0) return;
   if (verb == null) { if (act === 1) say(`· ${k} (unmapped)`); return; }
 
@@ -235,8 +204,6 @@ async function loop() {
     comm.onConnectionEvent((e) => { if (e.type !== 0) down = true; });
 
     if (!(await comm.connect(dev).catch(() => false))) {
-      // The usual cause is Codex desktop holding the node. Say so, since the
-      // kit's own error does not.
       say("connect failed — check the device is awake and the hidraw node is readable");
       await sleep(3000);
       continue;
