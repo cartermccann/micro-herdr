@@ -30,7 +30,7 @@ import { allAppidsForTarget, appidVariants, canonicalAppid, isPassthrough, wlrct
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "./path-placeholder";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
