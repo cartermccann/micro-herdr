@@ -78,9 +78,9 @@
         "start": "ctrl+d",
         "stop": "ctrl+d"
       },
-      "new-session": null,
+      "new-session": "ctrl+n",
       "approve": null,
-      "deny": null,
+      "deny": "Escape",
       "diff": null,
       "effort-up": null,
       "effort-down": null,
@@ -118,23 +118,18 @@
     "terminal.approve": "CLI agent permission prompts select on the number key, and terminal.deny on Escape — the same thing bin/mh already does for herdr",
     "cursor.dictate": "Cursor's composer mic button is composer.toggleVoiceDictation (composer.cancelVoiceDictation also exists), read out of the workbench bundle. It ships with no default keybinding, so ~/.config/Cursor/User/keybindings.json maps F13 to it and the bridge sends F13 on both edges. It is a toggle, so down-then-up gives hold-to-talk.",
     "t3code.dictate": "T3 Code has NO built-in dictation: its only Dictation reference is a comment about Wispr Flow, an external tool, pasting into it. So it gets the local pipeline like the terminal does.",
+    "cursor.dictate.agents-window": "HISTORY, rule removed 2026-09-16. profiles.json used to force parakeet in any Cursor window titled \"Cursor Agents\", on the grounds that the Agents window ignored keybindings.json (ctrl+shift+n worked there, F13 and ctrl+alt+d did not). That measurement was dated 2026-08-28 and was carried into this file unchanged when it was first written on 2026-09-16; it was never re-taken against Cursor 3.20.21 and the machine it came from was not recorded. Carter reports F13 dictation working in the Agents window on atlas, so the override is gone and Cursor now uses its own dictation in every window. If F13 turns out to do nothing in Agents on some build, the symptom is the log showing `dictate start [F13]` while nothing records, and the fix is to restore a windowVariants entry rather than to change verbs.cursor.",
     "cursor.effort": "composer.cycleModelParameter (reasoning effort) and composer.cycleModel, read out of the workbench bundle alongside composer.openModelToggle. Neither ships a default keybinding, so Cursor's keybindings.json maps F14 and F15 to them. LIMITATION: these are one-way cycle commands, so the knob advances the effort level in the same direction whichever way you turn it. It wraps, so you can still reach every level.",
-    "grokbot.effort": "Deliberately unmapped: Grokbot exposes a single model with no effort control, so there is nothing for the knob to select."
+    "grokbot.new-session": "sand.newAgent, hotkey mod+n, read out of the renderer bundle in Grokbot 0.24.0's app.asar. Its action object carries isEnabledInContentEditable:!0, so it fires even while the composer has focus. `mod` resolves per platform in the hotkey layer (`const t = e ? \"meta\" : \"ctrl\"`, keyed off isMacPlatform), which is ctrl on Linux.",
+    "grokbot.deny": "Escape, and it is the app's own advertised binding: the pending-permission component's button reads \"Deny once (Esc)\". It installs a window keydown listener in CAPTURE phase that calls the deny resolution. Bare Escape only: the handler bails on any modifier, on event.repeat, on defaultPrevented, and when the event target is an input, textarea or select. The composer is a contenteditable div and none of those three, so a synthetic Escape still denies while the prompt has focus.",
+    "grokbot.approve": "Stays null because Grokbot 0.24.0 has NO keyboard path to approve. Searched the whole renderer bundle: \"Allow once\", \"Allow automatically\" and \"Approve\" exist only as button labels, no accelerator is registered for any of them, and no approve handler sits near a key check. Deny is keyboard-reachable and approve is not, which is the safe asymmetry, so this is a missing feature upstream rather than something to guess a chord for.",
+    "grokbot.diff": "Stays null because there is no diff command in the app at all. The renderer's command registry holds 16 sand.* actions and none of them is a diff view.",
+    "grokbot.dictate.preconditions": "Two facts the ctrl+d handler enforces that the entry above did not record, both read from the bundle: it returns early unless isPromptFocused(), so raising the window is NOT enough and the composer itself must have focus; and the hold threshold is exactly 500 ms (QPn), which is how long the key must be held for the keyup edge to stop recording.",
+    "grokbot.effort": "Deliberately unmapped: Grokbot exposes a single model with no effort control, so there is nothing for the knob to select. The renderer does expose sand.nextAgent (alt+down) and sand.previousAgent (alt+up), which would give the knob something to do, but the keys map assigns ENC_CW/ENC_CC globally to effort-up/effort-down, so repurposing them here would also take Cursor's only reasoning-effort control away. Left alone on purpose."
   },
   "_needs_input": [
     "t3code effort/model: T3 Code has modelPicker.toggle, modelPicker.jump.1-9, reasoningEffort and effortLevel as bindable command names, but its config dir holds only Electron profile data, so there is no keybindings file to write and no discoverable defaults. Assign chords in its own settings UI, then set them here.",
     "terminal effort/model: CLI agents switch models with a slash command rather than a keystroke (Claude Code uses /model), so a knob detent has no natural mapping. Could send literal text if that is wanted.",
-    "new-session / approve / deny / diff for cursor, grokbot and t3code"
-  ],
-  "windowVariants": {
-    "cursor": [
-      {
-        "titleMatch": "Cursor Agents",
-        "_why": "The Agents window ignores keybindings.json entirely — verified 2026-08-28: ctrl+shift+n (a default chord) works there, but F13 and a custom ctrl+alt+d both do nothing, while all three work in the main Cursor window. So composer.toggleVoiceDictation is unreachable there and the local pipeline is the only thing that works.",
-        "verbs": {
-          "dictate": "parakeet"
-        }
-      }
-    ]
-  }
+    "new-session / approve / deny / diff for cursor and t3code. Grokbot is settled: new-session and deny are mapped from its own bundle, approve and diff are unreachable there (see _grounded)"
+  ]
 }
