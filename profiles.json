@@ -3,9 +3,11 @@
   "_dictation_strategy": "Use the app's OWN dictation where it has one, fall back to the local Parakeet pipeline where it does not. That is why `dictate` is a per-target verb rather than a single global behaviour: 'parakeet' runs the local pipeline (hold to record, release to transcribe and insert), {\"hold\": \"<chord>\"} holds a chord down for as long as the mic key is held (for apps whose own hotkey is push-to-talk), and {\"start\": \"<chord>\", \"stop\": \"<chord>\"} sends one chord on press and another on release (for apps with separate start/stop commands).",
   "fallback": "terminal",
   "passthrough": [
-    "codex-desktop"
+    "codex-desktop",
+    "ChatGPT",
+    "Codex"
   ],
-  "_passthrough_why": "Codex desktop reads the SAME hidraw node as this bridge — hidraw allows multiple concurrent readers — and acts on the same keys with its own native Micro integration. Without this the mic key fires twice: Codex's dictation and ours. While a passthrough app has focus the bridge ignores every key and lets the app own the device.",
+  "_passthrough_why": "Codex desktop reads the SAME hidraw node as this bridge — hidraw allows multiple concurrent readers — and acts on the same keys with its own native Micro integration. Without this the mic key fires twice: Codex's dictation and ours. While a passthrough app has focus the bridge ignores every key and lets the app own the device. Extra spellings exist because Electron's Wayland app_id is the productName (`ChatGPT`) unless --class actually stuck (`codex-desktop`).",
   "targetColours": {
     "cursor": "2f7fe0",
     "grokbot": "c06010",
@@ -16,11 +18,13 @@
     {
       "name": "cursor",
       "appid": "cursor",
+      "appidAliases": ["Cursor"],
       "label": "Cursor"
     },
     {
       "name": "grokbot",
       "appid": "grok-bot",
+      "appidAliases": ["Grok Bot"],
       "label": "Grokbot"
     },
     {
