@@ -111,6 +111,17 @@
       "cycle-model": null
     }
   },
+  "windowVariants": {
+    "cursor": [
+      {
+        "titleMatch": "Cursor Agents",
+        "_why": "The Agents window does not act on keybindings.json. First measured 2026-08-28 (ctrl+shift+n, a default chord, works there; F13 and a custom ctrl+alt+d do not, while all three work in the main Cursor window). The rule was removed on 2026-09-16 on the strength of a recollection that F13 dictation had worked in Agents on atlas, and restored on 2026-09-17 when it did not: the log showed `ACT10 -> dictate start [F13] in Cursor` with no error, a 928 ms hold, and nothing recorded, against Cursor 3.20.21 with the Agents window the only Cursor window open. That is the exact symptom the removal note said to watch for. wtype and wlrctl both succeed, so the dispatch side is not at fault; the chord reaches the window and the window ignores it.",
+        "verbs": {
+          "dictate": "parakeet"
+        }
+      }
+    ]
+  },
   "_grounded": {
     "send": "Carter: the send key 'sends the transcripted line, its basically like enter'",
     "paste": "grok-bot registers CmdOrCtrl+V as an Electron accelerator; Cursor is VS Code derived; ghostty uses ctrl+shift+v in a terminal",
@@ -119,7 +130,7 @@
     "terminal.approve": "CLI agent permission prompts select on the number key, and terminal.deny on Escape — the same thing bin/mh already does for herdr",
     "cursor.dictate": "Cursor's composer mic button is composer.toggleVoiceDictation (composer.cancelVoiceDictation also exists), read out of the workbench bundle. It ships with no default keybinding, so ~/.config/Cursor/User/keybindings.json maps F13 to it and the bridge sends F13 on both edges. It is a toggle, so down-then-up gives hold-to-talk.",
     "t3code.dictate": "T3 Code has NO built-in dictation: its only Dictation reference is a comment about Wispr Flow, an external tool, pasting into it. So it gets the local pipeline like the terminal does.",
-    "cursor.dictate.agents-window": "HISTORY, rule removed 2026-09-16. profiles.json used to force parakeet in any Cursor window titled \"Cursor Agents\", on the grounds that the Agents window ignored keybindings.json (ctrl+shift+n worked there, F13 and ctrl+alt+d did not). That measurement was dated 2026-08-28 and was carried into this file unchanged when it was first written on 2026-09-16; it was never re-taken against Cursor 3.20.21 and the machine it came from was not recorded. Carter reports F13 dictation working in the Agents window on atlas, so the override is gone and Cursor now uses its own dictation in every window. If F13 turns out to do nothing in Agents on some build, the symptom is the log showing `dictate start [F13]` while nothing records, and the fix is to restore a windowVariants entry rather than to change verbs.cursor.",
+    "cursor.dictate.agents-window": "Restored 2026-09-17 after a one-day removal; see windowVariants._why for the full timeline and the measurement that settled it. Keep this rule: the main Cursor window uses its own dictation (F13 -> composer.toggleVoiceDictation), the Agents window cannot, and falls back to the local pipeline. If a future Cursor build fixes Agents, the tell is F13 working there by hand, not a recollection.",
     "cursor.effort": "composer.cycleModelParameter (reasoning effort) and composer.cycleModel, read out of the workbench bundle alongside composer.openModelToggle. Neither ships a default keybinding, so Cursor's keybindings.json maps F14 and F15 to them. LIMITATION: these are one-way cycle commands, so the knob advances the effort level in the same direction whichever way you turn it. It wraps, so you can still reach every level.",
     "grokbot.new-session": "sand.newAgent, hotkey mod+n, read out of the renderer bundle in Grokbot 0.24.0's app.asar. Its action object carries isEnabledInContentEditable:!0, so it fires even while the composer has focus. `mod` resolves per platform in the hotkey layer (`const t = e ? \"meta\" : \"ctrl\"`, keyed off isMacPlatform), which is ctrl on Linux.",
     "grokbot.deny": "Escape, and it is the app's own advertised binding: the pending-permission component's button reads \"Deny once (Esc)\". It installs a window keydown listener in CAPTURE phase that calls the deny resolution. Bare Escape only: the handler bails on any modifier, on event.repeat, on defaultPrevented, and when the event target is an input, textarea or select. The composer is a contenteditable div and none of those three, so a synthetic Escape still denies while the prompt has focus.",
