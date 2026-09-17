@@ -23,7 +23,7 @@
 // list in profiles.json, not shutting Codex down.
 import { KIT_PATH, resolveMac, makeLogger } from "./lib/kit.mjs";
 import { watchTarget } from "./lib/target.mjs";
-import { makeDispatcher, makeFocuser, chordToHoldArgs, sendWtype } from "./lib/dispatch.mjs";
+import { makeDispatcher, makeFocuser, makeHoldPress, sendWtype } from "./lib/dispatch.mjs";
 import { makeDictation } from "./lib/dictate.mjs";
 import { makePainter, Preset, Colour } from "./lib/lighting.mjs";
 import { allAppidsForTarget, appidVariants, canonicalAppid, isPassthrough, wlrctlFocusArgs } from "./lib/identity.mjs";
@@ -60,13 +60,18 @@ loadConfig();
 process.on("SIGHUP", () => { say("SIGHUP — reloading config"); try { loadConfig(); } catch (e) { say("config error:", e.message); } });
 
 // Chords must land in the target that chose them, not in whatever the pointer
-// last drifted over. `targets` is read lazily: this closure only runs on a
-// keypress, long after the watcher below is constructed.
+// last drifted over. `targets` is assigned below; declared null here so an early
+// read gives null rather than throwing, the same way `rpc` and `dictation` are
+// handled further down.
+let targets = null;
+
 const ensureFocus = makeFocuser({
   log: say,
   dryRun: DRY_RUN,
   getFocused: () => targets?.focused ?? null,
 });
+
+const holdPress = makeHoldPress({ log: say, dryRun: DRY_RUN, ensureFocus });
 
 const dispatch = makeDispatcher({
   log: say,
@@ -80,7 +85,7 @@ const dispatch = makeDispatcher({
 });
 let dictation = null;
 
-const targets = watchTarget({
+targets = watchTarget({
   targets: cfg.targets,
   fallback: cfg.fallback,
   log: say,
@@ -117,8 +122,6 @@ function verbsFor(target) {
   return base;
 }
 
-let heldChord = null;
-
 function handleDictate(k, act, strategy) {
   if (strategy == null) {
     if (act === 1) say(`✗ ${k} → dictate · not defined for ${targets.active?.label ?? "no target"} (needs input)`);
@@ -133,18 +136,11 @@ function handleDictate(k, act, strategy) {
   }
 
   if (typeof strategy === "object" && strategy.hold) {
-    const args = chordToHoldArgs(strategy.hold);
-    if (args == null) { say(`✗ ${k} → dictate · unparseable hold ${JSON.stringify(strategy.hold)}`); return; }
     if (act === 1) {
       say(`▶ ${k} → dictate hold ${strategy.hold} in ${targets.active?.label}`);
-      heldChord = args;
-      ensureFocus(targets.active, (err) => {
-        if (err) { say(`  ✗ dictate down: ${err.message}`); heldChord = null; return; }
-        sendWtype(args.down, { log: say, dryRun: DRY_RUN, what: "dictate down" });
-      });
-    } else if (act === 0 && heldChord) {
-      sendWtype(heldChord.up, { log: say, dryRun: DRY_RUN, what: "dictate up" });
-      heldChord = null;
+      holdPress.down(targets.active, strategy.hold, k);
+    } else if (act === 0) {
+      holdPress.up(k);
     }
     return;
   }
@@ -230,6 +226,7 @@ async function loop() {
     say("link dropped — reconnecting…");
     rpc = null;
     dictation.reset();
+    holdPress.reset();
     try { await comm.disconnect(); } catch {}
     await sleep(500);
   }
