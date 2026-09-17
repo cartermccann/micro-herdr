@@ -23,7 +23,7 @@
 // list in profiles.json, not shutting Codex down.
 import { KIT_PATH, resolveMac, makeLogger } from "./lib/kit.mjs";
 import { watchTarget } from "./lib/target.mjs";
-import { makeDispatcher, chordToHoldArgs, sendWtype } from "./lib/dispatch.mjs";
+import { makeDispatcher, makeFocuser, chordToHoldArgs, sendWtype } from "./lib/dispatch.mjs";
 import { makeDictation } from "./lib/dictate.mjs";
 import { makePainter, Preset, Colour } from "./lib/lighting.mjs";
 import { allAppidsForTarget, appidVariants, canonicalAppid, isPassthrough, wlrctlFocusArgs } from "./lib/identity.mjs";
@@ -59,9 +59,19 @@ function loadConfig() {
 loadConfig();
 process.on("SIGHUP", () => { say("SIGHUP — reloading config"); try { loadConfig(); } catch (e) { say("config error:", e.message); } });
 
+// Chords must land in the target that chose them, not in whatever the pointer
+// last drifted over. `targets` is read lazily: this closure only runs on a
+// keypress, long after the watcher below is constructed.
+const ensureFocus = makeFocuser({
+  log: say,
+  dryRun: DRY_RUN,
+  getFocused: () => targets?.focused ?? null,
+});
+
 const dispatch = makeDispatcher({
   log: say,
   dryRun: DRY_RUN,
+  ensureFocus,
   focusIds: (id) => {
     const c = canonicalAppid(id);
     const t = cfg.targets.find((t) => canonicalAppid(t.appid) === c || t.name === id);
@@ -128,7 +138,10 @@ function handleDictate(k, act, strategy) {
     if (act === 1) {
       say(`▶ ${k} → dictate hold ${strategy.hold} in ${targets.active?.label}`);
       heldChord = args;
-      sendWtype(args.down, { log: say, dryRun: DRY_RUN, what: "dictate down" });
+      ensureFocus(targets.active, (err) => {
+        if (err) { say(`  ✗ dictate down: ${err.message}`); heldChord = null; return; }
+        sendWtype(args.down, { log: say, dryRun: DRY_RUN, what: "dictate down" });
+      });
     } else if (act === 0 && heldChord) {
       sendWtype(heldChord.up, { log: say, dryRun: DRY_RUN, what: "dictate up" });
       heldChord = null;
